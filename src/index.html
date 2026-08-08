@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Maximino</title>
+    <meta
+      name="description"
+      content="A wall for the things you never said out loud, paired with the song that says it for you."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600;700&family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="icon" type="image/png" href="/assets/favicon.png" />
+    <link rel="apple-touch-icon" href="/assets/favicon.png" />
+  </head>
+  <body>
+    <div class="wall-texture" aria-hidden="true"></div>
+
+    <header class="site-header">
+      <a class="site-header__brand" href="/" aria-label="Maximino, home">
+        <img class="site-header__logo" src="/assets/logo.png" alt="Maximino" />
+      </a>
+      <button class="site-header__cta" id="openComposerTop" type="button">
+        Pin a message
+      </button>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="hero__eyebrow">
+          a freedom wall, for the things you never said out loud.
+        </p>
+        <h1 class="hero__title">Maximino</h1>
+        <p class="hero__tagline">
+          Write what you never said out loud. Pin a song to it. Leave it on the
+          wall for whoever needs to read it.
+        </p>
+        <button class="btn-marker" id="openComposerHero" type="button">
+          Pin a message
+        </button>
+      </section>
+
+      <section class="wall-section" id="wallSection">
+        <div class="wall-section__header">
+          <h2 class="wall-section__title">The wall so far</h2>
+          <span class="wall-section__count" id="wallCount"></span>
+        </div>
+
+        <div class="wall" id="wall" aria-live="polite"></div>
+
+        <p class="wall__empty" id="wallEmpty" hidden>
+          The wall is empty. Be the first to pin something.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Carpe diem. Seize the day. Make your lives extraordinary.</p>
+    </footer>
+
+    <div class="composer-overlay" id="composerOverlay" hidden>
+      <div
+        class="composer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="composerTitle"
+      >
+        <button
+          class="composer__close"
+          id="closeComposer"
+          type="button"
+          aria-label="Close"
+        >
+          &times;
+        </button>
+
+        <h2 class="composer__title" id="composerTitle">
+          Pin something to the wall
+        </h2>
+
+        <form id="messageForm" novalidate>
+          <label class="field">
+            <span class="field__label"
+              >Who is this for?
+              <span class="field__optional">(optional)</span></span
+            >
+            <input
+              type="text"
+              id="recipientInput"
+              name="recipient"
+              maxlength="60"
+              placeholder="A name, initials, or 'you know who you are'"
+            />
+          </label>
+
+          <label class="field">
+            <span class="field__label">Your message</span>
+            <textarea
+              id="messageInput"
+              name="message"
+              maxlength="400"
+              rows="4"
+              required
+              placeholder="Say the thing."
+              aria-describedby="messageCount"
+            ></textarea>
+            <span class="field__count" id="messageCount">400 left</span>
+          </label>
+
+          <div class="field">
+            <span class="field__label"
+              >Attach a song
+              <span class="field__optional">(optional)</span></span
+            >
+            <div class="song-search">
+              <input
+                type="text"
+                id="songSearchInput"
+                placeholder="Search a song or artist"
+                autocomplete="off"
+              />
+              <ul class="song-results" id="songResults" hidden></ul>
+            </div>
+
+            <div class="song-picked" id="songPicked" hidden>
+              <img class="song-picked__art" id="songPickedArt" alt="" />
+              <div class="song-picked__meta">
+                <span class="song-picked__title" id="songPickedTitle"></span>
+                <span class="song-picked__artist" id="songPickedArtist"></span>
+              </div>
+              <button
+                type="button"
+                class="song-picked__remove"
+                id="songPickedRemove"
+                aria-label="Remove song"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+
+          <p class="composer__error" id="composerError" hidden></p>
+
+          <button
+            type="submit"
+            class="btn-marker btn-marker--submit"
+            id="submitMessage"
+          >
+            <span class="btn-marker__label">Pin it to the wall</span>
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <audio id="previewPlayer" preload="none"></audio>
+
+    <script src="/js/script.js"></script>
+  </body>
+</html>
