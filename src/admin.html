@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin — Maximino</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/css/style.css" />
+    <link rel="icon" type="image/png" href="/assets/favicon.png" />
+    <style>
+      body { display: block; }
+      main { display: block; }
+
+      .admin-shell {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 40px 24px 80px;
+      }
+
+      .admin-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-bottom: 28px;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .admin-title {
+        font-family: var(--font-body);
+        font-weight: 700;
+        font-size: 1.3rem;
+        color: var(--paper-1);
+        margin: 0;
+      }
+
+      .admin-logout {
+        background: none;
+        border: 1px solid rgba(244, 238, 220, 0.2);
+        color: #9b9788;
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        padding: 7px 14px;
+        border-radius: 100px;
+        cursor: pointer;
+      }
+      .admin-logout:hover { color: var(--paper-1); border-color: var(--paper-1); }
+
+      .admin-login {
+        max-width: 340px;
+        margin: 15vh auto 0;
+        text-align: center;
+      }
+
+      .admin-login h1 {
+        font-family: var(--font-body);
+        font-size: 1.1rem;
+        color: var(--paper-1);
+        margin: 0 0 18px;
+      }
+
+      .admin-login input {
+        width: 100%;
+        font-family: var(--font-mono);
+        font-size: 0.9rem;
+        padding: 11px 13px;
+        border-radius: 6px;
+        border: 1.5px solid rgba(244, 238, 220, 0.15);
+        background: #fffdf6;
+        color: var(--ink);
+        margin-bottom: 12px;
+        box-sizing: border-box;
+      }
+
+      .admin-error {
+        font-family: var(--font-mono);
+        font-size: 0.76rem;
+        color: #e08a7a;
+        margin: 10px 0 0;
+        min-height: 1em;
+      }
+
+      .admin-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid rgba(244, 238, 220, 0.12);
+      }
+
+      .admin-tab {
+        background: none;
+        border: none;
+        color: #8b877c;
+        font-family: var(--font-mono);
+        font-size: 0.78rem;
+        padding: 10px 4px;
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+      }
+
+      .admin-tab.is-active {
+        color: var(--marker-gold);
+        border-bottom-color: var(--marker-gold);
+      }
+
+      .admin-panel { display: none; }
+      .admin-panel.is-active { display: block; }
+
+      .admin-empty {
+        color: #6f6a5c;
+        font-family: var(--font-mono);
+        font-size: 0.82rem;
+        padding: 30px 0;
+        text-align: center;
+      }
+
+      .admin-row {
+        background: var(--paper-1);
+        color: var(--ink);
+        border-radius: 8px;
+        padding: 16px 18px;
+        margin-bottom: 12px;
+      }
+
+      .admin-row__top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+
+      .admin-row__recipient {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        text-transform: uppercase;
+        color: var(--music-teal-dark);
+      }
+
+      .admin-row__time {
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        color: #8b877c;
+        white-space: nowrap;
+      }
+
+      .admin-row__message {
+        font-family: var(--font-body);
+        font-size: 0.92rem;
+        line-height: 1.4;
+        margin: 0 0 10px;
+      }
+
+      .admin-row__song {
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        color: var(--music-teal-dark);
+        margin: 0 0 10px;
+      }
+
+      .admin-row__actions {
+        display: flex;
+        gap: 10px;
+      }
+
+      .admin-btn {
+        font-family: var(--font-mono);
+        font-size: 0.7rem;
+        padding: 6px 13px;
+        border-radius: 100px;
+        border: 1px solid rgba(32, 41, 61, 0.2);
+        background: transparent;
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      .admin-btn:hover { background: rgba(32, 41, 61, 0.06); }
+
+      .admin-btn--danger {
+        border-color: #a13d2f;
+        color: #a13d2f;
+      }
+      .admin-btn--danger:hover { background: rgba(161, 61, 47, 0.08); }
+
+      .admin-btn:disabled { opacity: 0.5; cursor: default; }
+
+      .admin-loading {
+        color: #6f6a5c;
+        font-family: var(--font-mono);
+        font-size: 0.8rem;
+        padding: 20px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wall-texture" aria-hidden="true"></div>
+
+    <div class="admin-login" id="loginScreen">
+      <h1>Maximino Admin</h1>
+      <form id="loginForm">
+        <input type="password" id="passwordInput" placeholder="Admin password" autocomplete="current-password" />
+        <button type="submit" class="btn-marker" style="width: 100%;">Unlock</button>
+        <p class="admin-error" id="loginError"></p>
+      </form>
+    </div>
+
+    <div class="admin-shell" id="adminApp" hidden>
+      <div class="admin-header">
+        <p class="admin-title">Maximino Admin</p>
+        <button class="admin-logout" id="logoutBtn" type="button">Log out</button>
+      </div>
+
+      <div class="admin-tabs">
+        <button class="admin-tab is-active" data-tab="messages" type="button">Messages</button>
+        <button class="admin-tab" data-tab="reports" type="button">Reports</button>
+        <button class="admin-tab" data-tab="feedback" type="button">Feedback</button>
+      </div>
+
+      <div class="admin-panel is-active" id="panel-messages">
+        <div class="admin-loading">Loading…</div>
+      </div>
+      <div class="admin-panel" id="panel-reports">
+        <div class="admin-loading">Loading…</div>
+      </div>
+      <div class="admin-panel" id="panel-feedback">
+        <div class="admin-loading">Loading…</div>
+      </div>
+    </div>
+
+    <script>
+      (() => {
+        const STORAGE_KEY = 'maximino_admin_key';
+
+        const loginScreen = document.getElementById('loginScreen');
+        const adminApp = document.getElementById('adminApp');
+        const loginForm = document.getElementById('loginForm');
+        const passwordInput = document.getElementById('passwordInput');
+        const loginError = document.getElementById('loginError');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        const tabs = document.querySelectorAll('.admin-tab');
+        const panels = {
+          messages: document.getElementById('panel-messages'),
+          reports: document.getElementById('panel-reports'),
+          feedback: document.getElementById('panel-feedback'),
+        };
+
+        function escapeHtml(str) {
+          const div = document.createElement('div');
+          div.textContent = str == null ? '' : str;
+          return div.innerHTML;
+        }
+
+        function formatTime(dateStr) {
+          if (!dateStr) return '';
+          return new Date(dateStr).toLocaleString();
+        }
+
+        function getKey() {
+          return sessionStorage.getItem(STORAGE_KEY) || '';
+        }
+
+        async function adminFetch(path, options = {}) {
+          const res = await fetch(path, {
+            ...options,
+            headers: {
+              ...(options.headers || {}),
+              'x-admin-key': getKey(),
+            },
+          });
+          if (res.status === 401) {
+            sessionStorage.removeItem(STORAGE_KEY);
+            showLogin('Session expired. Enter the password again.');
+            throw new Error('Unauthorized');
+          }
+          return res;
+        }
+
+        function showLogin(message) {
+          loginScreen.hidden = false;
+          adminApp.hidden = true;
+          loginError.textContent = message || '';
+        }
+
+        function showApp() {
+          loginScreen.hidden = true;
+          adminApp.hidden = false;
+          loadActiveTab();
+        }
+
+        loginForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const value = passwordInput.value.trim();
+          if (!value) return;
+
+          sessionStorage.setItem(STORAGE_KEY, value);
+
+          try {
+            const res = await fetch('/api/admin/verify', {
+              headers: { 'x-admin-key': value },
+            });
+            if (res.ok) {
+              loginError.textContent = '';
+              showApp();
+            } else if (res.status === 503) {
+              sessionStorage.removeItem(STORAGE_KEY);
+              loginError.textContent = 'Admin access is not configured on the server yet.';
+            } else {
+              sessionStorage.removeItem(STORAGE_KEY);
+              loginError.textContent = 'Incorrect password.';
+            }
+          } catch (err) {
+            sessionStorage.removeItem(STORAGE_KEY);
+            loginError.textContent = "Couldn't reach the server. Try again.";
+          }
+        });
+
+        logoutBtn.addEventListener('click', () => {
+          sessionStorage.removeItem(STORAGE_KEY);
+          showLogin();
+        });
+
+        tabs.forEach(tab => {
+          tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('is-active'));
+            tab.classList.add('is-active');
+            Object.values(panels).forEach(p => p.classList.remove('is-active'));
+            panels[tab.dataset.tab].classList.add('is-active');
+            loadTab(tab.dataset.tab);
+          });
+        });
+
+        function loadActiveTab() {
+          const active = document.querySelector('.admin-tab.is-active');
+          loadTab(active ? active.dataset.tab : 'messages');
+        }
+
+        const loadedTabs = new Set();
+
+        function loadTab(name, force) {
+          if (loadedTabs.has(name) && !force) return;
+          loadedTabs.add(name);
+          if (name === 'messages') loadMessages();
+          if (name === 'reports') loadReports();
+          if (name === 'feedback') loadFeedback();
+        }
+
+        async function loadMessages() {
+          const panel = panels.messages;
+          try {
+            const res = await adminFetch('/api/admin/messages');
+            const items = await res.json();
+
+            if (!Array.isArray(items) || items.length === 0) {
+              panel.innerHTML = '<p class="admin-empty">No dedications yet.</p>';
+              return;
+            }
+
+            panel.innerHTML = items.map(d => `
+              <div class="admin-row" data-id="${d._id}">
+                <div class="admin-row__top">
+                  <span class="admin-row__recipient">${d.recipient ? 'for ' + escapeHtml(d.recipient) : 'no recipient'}</span>
+                  <span class="admin-row__time">${formatTime(d.timestamp)}</span>
+                </div>
+                <p class="admin-row__message">${escapeHtml(d.message)}</p>
+                ${d.song_title ? `<p class="admin-row__song">♪ ${escapeHtml(d.song_title)} — ${escapeHtml(d.song_artist || '')}</p>` : ''}
+                <div class="admin-row__actions">
+                  <button class="admin-btn admin-btn--danger" data-action="delete-message" data-id="${d._id}">Delete</button>
+                </div>
+              </div>
+            `).join('');
+          } catch (err) {
+            if (err.message !== 'Unauthorized') {
+              panel.innerHTML = '<p class="admin-empty">Failed to load messages.</p>';
+            }
+          }
+        }
+
+        async function loadReports() {
+          const panel = panels.reports;
+          try {
+            const res = await adminFetch('/api/admin/reports');
+            const items = await res.json();
+
+            if (!Array.isArray(items) || items.length === 0) {
+              panel.innerHTML = '<p class="admin-empty">No reports right now.</p>';
+              return;
+            }
+
+            panel.innerHTML = items.map(r => {
+              const msg = r.messageId;
+              if (!msg) {
+                return `
+                  <div class="admin-row" data-report-id="${r._id}">
+                    <p class="admin-row__message">The reported message was already deleted.</p>
+                    <div class="admin-row__actions">
+                      <button class="admin-btn" data-action="dismiss-report" data-id="${r._id}">Dismiss</button>
+                    </div>
+                  </div>
+                `;
+              }
+              return `
+                <div class="admin-row" data-report-id="${r._id}">
+                  <div class="admin-row__top">
+                    <span class="admin-row__recipient">${msg.recipient ? 'for ' + escapeHtml(msg.recipient) : 'no recipient'}</span>
+                    <span class="admin-row__time">reported ${formatTime(r.timestamp)}</span>
+                  </div>
+                  <p class="admin-row__message">${escapeHtml(msg.message)}</p>
+                  <div class="admin-row__actions">
+                    <button class="admin-btn" data-action="dismiss-report" data-id="${r._id}">Dismiss</button>
+                    <button class="admin-btn admin-btn--danger" data-action="delete-message" data-id="${msg._id}" data-report-id="${r._id}">Delete message</button>
+                  </div>
+                </div>
+              `;
+            }).join('');
+          } catch (err) {
+            if (err.message !== 'Unauthorized') {
+              panel.innerHTML = '<p class="admin-empty">Failed to load reports.</p>';
+            }
+          }
+        }
+
+        async function loadFeedback() {
+          const panel = panels.feedback;
+          try {
+            const res = await adminFetch('/api/admin/feedback');
+            const items = await res.json();
+
+            if (!Array.isArray(items) || items.length === 0) {
+              panel.innerHTML = '<p class="admin-empty">No feedback yet.</p>';
+              return;
+            }
+
+            panel.innerHTML = items.map(f => `
+              <div class="admin-row">
+                <div class="admin-row__top">
+                  <span class="admin-row__recipient">${f.name ? escapeHtml(f.name) : 'anonymous'}</span>
+                  <span class="admin-row__time">${formatTime(f.timestamp)}</span>
+                </div>
+                <p class="admin-row__message">${escapeHtml(f.message)}</p>
+              </div>
+            `).join('');
+          } catch (err) {
+            if (err.message !== 'Unauthorized') {
+              panel.innerHTML = '<p class="admin-empty">Failed to load feedback.</p>';
+            }
+          }
+        }
+
+        document.addEventListener('click', async (e) => {
+          const btn = e.target.closest('button[data-action]');
+          if (!btn) return;
+
+          const action = btn.dataset.action;
+
+          if (action === 'delete-message') {
+            if (btn.textContent === 'Delete' || btn.textContent === 'Delete message') {
+              btn.textContent = 'Confirm?';
+              setTimeout(() => {
+                if (btn.textContent === 'Confirm?') {
+                  btn.textContent = action === 'delete-message' && btn.dataset.reportId ? 'Delete message' : 'Delete';
+                }
+              }, 3000);
+              return;
+            }
+            btn.disabled = true;
+            try {
+              await adminFetch(`/api/admin/messages/${btn.dataset.id}`, { method: 'DELETE' });
+              loadedTabs.delete('messages');
+              loadedTabs.delete('reports');
+              loadTab('messages', true);
+              loadTab('reports', true);
+            } catch (err) {
+              btn.disabled = false;
+            }
+          }
+
+          if (action === 'dismiss-report') {
+            if (btn.textContent === 'Dismiss') {
+              btn.textContent = 'Confirm?';
+              setTimeout(() => {
+                if (btn.textContent === 'Confirm?') btn.textContent = 'Dismiss';
+              }, 3000);
+              return;
+            }
+            btn.disabled = true;
+            try {
+              await adminFetch(`/api/admin/reports/${btn.dataset.id}`, { method: 'DELETE' });
+              loadTab('reports', true);
+            } catch (err) {
+              btn.disabled = false;
+            }
+          }
+        });
+
+        if (getKey()) {
+          fetch('/api/admin/verify', { headers: { 'x-admin-key': getKey() } })
+            .then(res => {
+              if (res.ok) showApp();
+              else {
+                sessionStorage.removeItem(STORAGE_KEY);
+                showLogin();
+              }
+            })
+            .catch(() => showLogin());
+        } else {
+          showLogin();
+        }
+      })();
+    </script>
+  </body>
+</html>

@@ -65,7 +65,10 @@
       ${d.recipient ? `<p class="note__recipient">for ${escapeHtml(d.recipient)}</p>` : ''}
       <p class="note__message">${escapeHtml(d.message)}</p>
       <div class="note__footer">
-        <span class="note__time">${d.timestamp ? timeAgo(d.timestamp) : ''}</span>
+        <div class="note__meta">
+          <span class="note__time">${d.timestamp ? timeAgo(d.timestamp) : ''}</span>
+          <button class="note__report" type="button">Report</button>
+        </div>
         ${hasSong ? `
           <button class="ticket" type="button" data-preview="${d.preview_url || ''}">
             ${d.album_art ? `<img class="ticket__art" src="${escapeHtml(d.album_art)}" alt="" loading="lazy">` : ''}
@@ -82,6 +85,11 @@
     const ticketBtn = note.querySelector('.ticket');
     if (ticketBtn) {
       ticketBtn.addEventListener('click', () => togglePreview(ticketBtn));
+    }
+
+    const reportBtn = note.querySelector('.note__report');
+    if (reportBtn && d._id) {
+      attachReportHandler(reportBtn, d._id);
     }
 
     requestAnimationFrame(() => {
@@ -101,6 +109,43 @@
     });
 
     return note;
+  }
+
+  function attachReportHandler(btn, messageId) {
+    let confirming = false;
+    let confirmTimeout = null;
+
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+
+      if (!confirming) {
+        confirming = true;
+        btn.textContent = 'Sure?';
+        btn.classList.add('is-confirming');
+        confirmTimeout = setTimeout(() => {
+          confirming = false;
+          btn.textContent = 'Report';
+          btn.classList.remove('is-confirming');
+        }, 3000);
+        return;
+      }
+
+      clearTimeout(confirmTimeout);
+      btn.disabled = true;
+      btn.textContent = 'Reporting…';
+
+      try {
+        const res = await fetch(`/api/messages/${messageId}/report`, { method: 'POST' });
+        if (!res.ok) throw new Error();
+        btn.textContent = 'Reported';
+        showToast("Thanks — we'll take a look.");
+      } catch (err) {
+        console.error('Report failed:', err);
+        btn.textContent = 'Report';
+        btn.disabled = false;
+        confirming = false;
+      }
+    });
   }
 
   function togglePreview(ticketBtn) {
@@ -127,26 +172,86 @@
     activeTicket = null;
   });
 
-  async function loadWall() {
+  const loadMoreBtn = document.getElementById('loadMoreBtn');
+  let oldestTimestamp = null;
+  let wallHasMore = false;
+
+  async function fetchWallPage(before) {
+    const params = new URLSearchParams({ limit: '20' });
+    if (before) params.set('before', before);
+    const res = await fetch(`/api/messages?${params.toString()}`);
+    return res.json();
+  }
+
+  async function refreshWallCount() {
+    if (!wallCountEl) return;
     try {
-      const res = await fetch('/api/messages');
+      const res = await fetch('/api/messages/count');
       const data = await res.json();
+      if (typeof data.count === 'number') {
+        wallCountEl.textContent = `${data.count} pinned`;
+      }
+    } catch (err) {
+      console.error('Failed to load wall count:', err);
+    }
+  }
+
+  async function loadWall() {
+    if (!wallEl) return; 
+
+    try {
+      const data = await fetchWallPage();
+      const items = Array.isArray(data.items) ? data.items : [];
 
       wallEl.innerHTML = '';
-      if (!Array.isArray(data) || data.length === 0) {
+
+      if (items.length === 0) {
         wallEmptyEl.hidden = false;
-        wallCountEl.textContent = '';
+        if (loadMoreBtn) loadMoreBtn.hidden = true;
+        await refreshWallCount();
         return;
       }
 
       wallEmptyEl.hidden = true;
-      wallCountEl.textContent = `${data.length} pinned`;
-      data.forEach(d => wallEl.appendChild(renderMessage(d)));
+      items.forEach(d => wallEl.appendChild(renderMessage(d)));
+
+      oldestTimestamp = items[items.length - 1].timestamp;
+      wallHasMore = !!data.hasMore;
+      if (loadMoreBtn) loadMoreBtn.hidden = !wallHasMore;
+
+      await refreshWallCount();
     } catch (err) {
       console.error('Failed to load wall:', err);
       wallEmptyEl.hidden = false;
       wallEmptyEl.textContent = "Couldn't load the wall right now. Try refreshing.";
     }
+  }
+
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', async () => {
+      if (!wallHasMore || loadMoreBtn.disabled) return;
+
+      loadMoreBtn.disabled = true;
+      loadMoreBtn.textContent = 'Loading…';
+
+      try {
+        const data = await fetchWallPage(oldestTimestamp);
+        const items = Array.isArray(data.items) ? data.items : [];
+
+        items.forEach(d => wallEl.appendChild(renderMessage(d)));
+
+        if (items.length > 0) {
+          oldestTimestamp = items[items.length - 1].timestamp;
+        }
+        wallHasMore = !!data.hasMore;
+        loadMoreBtn.hidden = !wallHasMore;
+      } catch (err) {
+        console.error('Failed to load more:', err);
+      } finally {
+        loadMoreBtn.disabled = false;
+        loadMoreBtn.textContent = 'Load more';
+      }
+    });
   }
 
 
@@ -250,6 +355,27 @@
   });
 
 
+  function showToast(msg) {
+    let toastEl = document.getElementById('toastMessage');
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.id = 'toastMessage';
+      toastEl.className = 'toast';
+      toastEl.setAttribute('role', 'status');
+      toastEl.setAttribute('aria-live', 'polite');
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    toastEl.classList.remove('is-visible');
+    void toastEl.offsetWidth;
+    toastEl.classList.add('is-visible');
+
+    clearTimeout(showToast._timeout);
+    showToast._timeout = setTimeout(() => {
+      toastEl.classList.remove('is-visible');
+    }, 3200);
+  }
+
   form.addEventListener('submit', async e => {
     e.preventDefault();
     errorEl.hidden = true;
@@ -278,14 +404,22 @@
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) throw new Error('Server rejected the message.');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Server rejected the message.');
+      }
 
       closeComposer();
-      await loadWall();
-      document.getElementById('wallSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      if (wallEl) {
+        await loadWall();
+        document.getElementById('wallSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else {
+        showToast('Message pinned to the wall.');
+      }
     } catch (err) {
       console.error(err);
-      showError("Couldn't pin that right now. Try again in a moment.");
+      showError(err.message || "Couldn't pin that right now. Try again in a moment.");
       submitBtn.disabled = false;
     }
   });
@@ -293,6 +427,79 @@
   function showError(msg) {
     errorEl.textContent = msg;
     errorEl.hidden = false;
+  }
+
+  const feedbackOverlay = document.getElementById('feedbackOverlay');
+
+  if (feedbackOverlay) {
+    const openFeedbackBtn = document.getElementById('openFeedbackTop');
+    const closeFeedbackBtn = document.getElementById('closeFeedback');
+    const feedbackForm = document.getElementById('feedbackForm');
+    const feedbackNameInput = document.getElementById('feedbackNameInput');
+    const feedbackMessageInput = document.getElementById('feedbackMessageInput');
+    const feedbackErrorEl = document.getElementById('feedbackError');
+    const submitFeedbackBtn = document.getElementById('submitFeedback');
+
+    function openFeedback() {
+      feedbackOverlay.hidden = false;
+      document.body.style.overflow = 'hidden';
+      feedbackMessageInput.focus();
+    }
+
+    function closeFeedback() {
+      feedbackOverlay.hidden = true;
+      document.body.style.overflow = '';
+      feedbackForm.reset();
+      feedbackErrorEl.hidden = true;
+      submitFeedbackBtn.disabled = false;
+    }
+
+    if (openFeedbackBtn) openFeedbackBtn.addEventListener('click', openFeedback);
+    closeFeedbackBtn.addEventListener('click', closeFeedback);
+    feedbackOverlay.addEventListener('click', e => {
+      if (e.target === feedbackOverlay) closeFeedback();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !feedbackOverlay.hidden) closeFeedback();
+    });
+
+    feedbackForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      feedbackErrorEl.hidden = true;
+
+      const message = feedbackMessageInput.value.trim();
+      if (!message) {
+        feedbackErrorEl.textContent = 'Write your feedback before sending.';
+        feedbackErrorEl.hidden = false;
+        return;
+      }
+
+      submitFeedbackBtn.disabled = true;
+
+      try {
+        const res = await fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: feedbackNameInput.value.trim(),
+            message
+          })
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Could not send feedback.');
+        }
+
+        closeFeedback();
+        showToast('Thanks - your feedback was sent.');
+      } catch (err) {
+        console.error(err);
+        feedbackErrorEl.textContent = err.message || "Couldn't send that right now. Try again in a moment.";
+        feedbackErrorEl.hidden = false;
+        submitFeedbackBtn.disabled = false;
+      }
+    });
   }
 
   loadWall();

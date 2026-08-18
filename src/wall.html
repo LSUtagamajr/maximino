@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Maximino</title>
+    <title>The wall - Maximino</title>
     <meta
       name="description"
-      content="A wall for the things you never said out loud, paired with the song that says it for you."
+      content="Messages pinned to the Maximino wall, each one paired with a song."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,27 +25,27 @@
       <a class="site-header__brand" href="/" aria-label="Maximino, home">
         <img class="site-header__logo" src="/assets/logo.png" alt="Maximino" />
       </a>
-      <button class="site-header__cta" id="openFeedbackTop" type="button">
-        Feedback
+      <button class="site-header__cta" id="openComposerTop" type="button">
+        Pin a message
       </button>
     </header>
 
     <main>
-      <section class="hero">
-        <p class="hero__eyebrow">
-          A freedom wall, for the thoughts you never said out loud. 
-        </p>
-        <h1 class="hero__title">Maximino</h1>
-        <p class="hero__tagline">
-          Some thoughts are easier to write than to say.
-          Give yours a song. Leave it for someone who needs it.
-        </p>
-        <div class="hero__actions">
-          <button class="btn-marker" id="openComposerHero" type="button">
-            Pin a message
-          </button>
-          <a class="btn-outline" href="/wall">See what's already on the wall</a>
+      <section class="wall-section" id="wallSection">
+        <div class="wall-section__header">
+          <h2 class="wall-section__title">The wall so far</h2>
+          <span class="wall-section__count" id="wallCount"></span>
         </div>
+
+        <div class="wall" id="wall" aria-live="polite"></div>
+
+        <p class="wall__empty" id="wallEmpty" hidden>
+          The wall is empty. Be the first to pin something.
+        </p>
+
+        <button class="btn-outline wall__load-more" id="loadMoreBtn" type="button" hidden>
+          Load more
+        </button>
       </section>
     </main>
 
@@ -148,69 +148,6 @@
     </div>
 
     <audio id="previewPlayer" preload="none"></audio>
-
-    <div class="composer-overlay" id="feedbackOverlay" hidden>
-      <div
-        class="composer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="feedbackTitle"
-      >
-        <button
-          class="composer__close"
-          id="closeFeedback"
-          type="button"
-          aria-label="Close"
-        >
-          &times;
-        </button>
-
-        <h2 class="composer__title" id="feedbackTitle">
-          Share your feedback
-        </h2>
-        <p class="feedback__intro">
-          Found a bug, or have an idea? This goes straight to the person
-          building the app — not the wall.
-        </p>
-
-        <form id="feedbackForm" novalidate>
-          <label class="field">
-            <span class="field__label"
-              >Your name <span class="field__optional">(optional)</span></span
-            >
-            <input
-              type="text"
-              id="feedbackNameInput"
-              name="name"
-              maxlength="60"
-              placeholder="So we know who to thank"
-            />
-          </label>
-
-          <label class="field">
-            <span class="field__label">Your feedback</span>
-            <textarea
-              id="feedbackMessageInput"
-              name="message"
-              maxlength="500"
-              rows="5"
-              required
-              placeholder="What's working, what's not, what you'd love to see next..."
-            ></textarea>
-          </label>
-
-          <p class="composer__error" id="feedbackError" hidden></p>
-
-          <button
-            type="submit"
-            class="btn-marker btn-marker--submit"
-            id="submitFeedback"
-          >
-            <span class="btn-marker__label">Send feedback</span>
-          </button>
-        </form>
-      </div>
-    </div>
 
     <script src="/js/script.js"></script>
   </body>

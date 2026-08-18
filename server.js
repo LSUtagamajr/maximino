@@ -10,7 +10,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(helmet({
-  // Allow Google Fonts and inline styles used by the page.
   contentSecurityPolicy: {
     directives: {
       ...helmet.contentSecurityPolicy.getDefaultDirectives(),
@@ -49,42 +48,64 @@ const messageSchema = new mongoose.Schema({
 
 const Message = mongoose.model('Message', messageSchema);
 
+const feedbackSchema = new mongoose.Schema({
+  name: String,
+  message: String,
+}, {
+  timestamps: { createdAt: 'timestamp', updatedAt: 'updated_at' }
+});
+
+const Feedback = mongoose.model('Feedback', feedbackSchema);
+
+const reportSchema = new mongoose.Schema({
+  messageId: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', required: true },
+}, {
+  timestamps: { createdAt: 'timestamp', updatedAt: 'updated_at' }
+});
+
+const Report = mongoose.model('Report', reportSchema);
+
+const crypto = require('crypto');
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
+
+function requireAdmin(req, res, next) {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).json({ error: 'Admin access is not configured on this server.' });
+  }
+
+  const provided = Buffer.from(req.get('x-admin-key') || '');
+  const expected = Buffer.from(ADMIN_PASSWORD);
+
+  const valid = provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+  if (!valid) {
+    return res.status(401).json({ error: 'Invalid admin key.' });
+  }
+  next();
+}
+
+const adminLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Wait a moment.' }
+});
+
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'src', 'index.html'));
 });
 
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-let spotifyAccessToken = '';
+app.get('/wall', (req, res) => {
+  res.sendFile(path.join(__dirname, 'src', 'wall.html'));
+});
 
-async function getSpotifyToken() {
-  if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
-    console.warn('Spotify credentials not set — skipping token refresh.');
-    return;
-  }
-  try {
-    const response = await axios.post(
-      'https://accounts.spotify.com/api/token',
-      'grant_type=client_credentials',
-      {
-        headers: {
-          'Authorization': 'Basic ' + Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64'),
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
-    spotifyAccessToken = response.data.access_token;
-    setTimeout(getSpotifyToken, (response.data.expires_in - 60) * 1000);
-    console.log('Spotify background token refreshed.');
-  } catch (error) {
-    console.error('Failed to get Spotify token:', error.message);
-  }
-}
-getSpotifyToken();
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'src', 'admin.html'));
+});
 
 const searchLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30, // 30 searches per minute per IP — generous for normal typing, blocks scripted abuse
+  max: 30, 
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many searches. Wait a moment and try again.' }
@@ -95,11 +116,25 @@ app.get('/api/search-song', searchLimiter, async (req, res) => {
   if (!query) return res.json([]);
 
   try {
-    const response = await axios.get('https://itunes.apple.com/search', {
-      params: { term: query, media: 'music', entity: 'song', limit: 6 }
+    const [globalRes, phRes] = await Promise.all([
+      axios.get('https://itunes.apple.com/search', {
+        params: { term: query, media: 'music', entity: 'song', limit: 15 }
+      }),
+      axios.get('https://itunes.apple.com/search', {
+        params: { term: query, media: 'music', entity: 'song', limit: 15, country: 'PH' }
+      })
+    ]);
+
+    const combined = [...globalRes.data.results, ...phRes.data.results];
+
+    const seen = new Set();
+    const deduped = combined.filter(track => {
+      if (seen.has(track.trackId)) return false;
+      seen.add(track.trackId);
+      return true;
     });
 
-    const tracks = response.data.results.map(track => ({
+    const tracks = deduped.slice(0, 15).map(track => ({
       title: track.trackName,
       artist: track.artistName,
       album_art: track.artworkUrl100 ? track.artworkUrl100.replace('100x100bb', '300x300bb') : '',
@@ -115,7 +150,7 @@ app.get('/api/search-song', searchLimiter, async (req, res) => {
 
 const postLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 5, // 5 pins per minute per IP — enough for a real person, not for a spam script
+  max: 5, 
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many dedications pinned. Wait a minute before pinning another.' }
@@ -135,7 +170,7 @@ app.post('/api/messages', postLimiter, async (req, res) => {
 
   try {
     const newMessage = new Message({
-      recipient: (recipient || 'Someone').slice(0, 60),
+      recipient: (recipient || '').trim().slice(0, 60),
       message: trimmedMessage,
       song_title: song_title || '',
       song_artist: song_artist || '',
@@ -153,12 +188,155 @@ app.post('/api/messages', postLimiter, async (req, res) => {
 
 app.get('/api/messages', async (req, res) => {
   try {
-    const message = await Message.find()
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+    const query = {};
+
+    if (req.query.before) {
+      const beforeDate = new Date(req.query.before);
+      if (!isNaN(beforeDate.getTime())) {
+        query.timestamp = { $lt: beforeDate };
+      }
+    }
+
+    const rows = await Message.find(query)
       .sort({ timestamp: -1 })
-      .limit(50);
-    res.json(message);
+      .limit(limit + 1);
+
+    const hasMore = rows.length > limit;
+    const items = rows.slice(0, limit);
+
+    res.json({ items, hasMore });
   } catch (err) {
     console.error('MongoDB fetch error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/messages/count', async (req, res) => {
+  try {
+    const count = await Message.countDocuments();
+    res.json({ count });
+  } catch (err) {
+    console.error('MongoDB count error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const reportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many reports at once. Try again in a minute.' }
+});
+
+app.post('/api/messages/:id/report', reportLimiter, async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Invalid message id.' });
+  }
+
+  try {
+    const exists = await Message.exists({ _id: id });
+    if (!exists) {
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+
+    await Report.create({ messageId: id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('MongoDB report save error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const feedbackLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too much feedback at once. Try again in a minute.' }
+});
+
+app.post('/api/feedback', feedbackLimiter, async (req, res) => {
+  const { name, message } = req.body;
+
+  if (!message || !message.trim()) {
+    return res.status(400).json({ error: 'Feedback message is required.' });
+  }
+
+  const trimmedMessage = message.trim();
+  if (trimmedMessage.length > 500) {
+    return res.status(400).json({ error: 'Feedback is too long (500 characters max).' });
+  }
+
+  try {
+    const newFeedback = new Feedback({
+      name: (name || '').trim().slice(0, 60),
+      message: trimmedMessage,
+    });
+
+    await newFeedback.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('MongoDB feedback save error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/verify', adminLimiter, requireAdmin, (req, res) => {
+  res.json({ success: true });
+});
+
+app.get('/api/admin/messages', adminLimiter, requireAdmin, async (req, res) => {
+  try {
+    const messages = await Message.find().sort({ timestamp: -1 }).limit(200);
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/messages/:id', adminLimiter, requireAdmin, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid message id.' });
+  }
+  try {
+    await Message.findByIdAndDelete(req.params.id);
+    await Report.deleteMany({ messageId: req.params.id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/feedback', adminLimiter, requireAdmin, async (req, res) => {
+  try {
+    const feedback = await Feedback.find().sort({ timestamp: -1 }).limit(200);
+    res.json(feedback);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/reports', adminLimiter, requireAdmin, async (req, res) => {
+  try {
+    const reports = await Report.find().sort({ timestamp: -1 }).limit(200).populate('messageId');
+    res.json(reports);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/reports/:id', adminLimiter, requireAdmin, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: 'Invalid report id.' });
+  }
+  try {
+    await Report.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
