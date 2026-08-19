@@ -326,9 +326,15 @@ app.get('/api/admin/verify', adminLimiter, requireAdmin, (req, res) => {
 
 app.get('/api/admin/messages', adminLimiter, requireAdmin, async (req, res) => {
   try {
-    const messages = await Message.find().sort({ timestamp: -1 }).limit(200);
+    await connectDB();
+
+    const messages = await Message.find()
+      .sort({ timestamp: -1 })
+      .limit(200);
+
     res.json(messages);
   } catch (err) {
+    console.error('Admin messages fetch error:', err);
     res.status(500).json({ error: err.message });
   }
 });
