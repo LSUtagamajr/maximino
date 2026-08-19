@@ -176,12 +176,22 @@
   let oldestTimestamp = null;
   let wallHasMore = false;
 
-  async function fetchWallPage(before) {
-    const params = new URLSearchParams({ limit: '20' });
-    if (before) params.set('before', before);
-    const res = await fetch(`/api/messages?${params.toString()}`);
-    return res.json();
+async function fetchWallPage(before) {
+  const params = new URLSearchParams({ limit: '20' });
+
+  if (before) {
+    params.set('before', before);
   }
+
+  const res = await fetch(`/api/messages?${params.toString()}`);
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Failed to load messages (${res.status})`);
+  }
+
+  return res.json();
+}
 
   async function refreshWallCount() {
     if (!wallCountEl) return;

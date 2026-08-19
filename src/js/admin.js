@@ -123,7 +123,7 @@
             const items = await res.json();
 
             if (!Array.isArray(items) || items.length === 0) {
-              panel.innerHTML = '<p class="admin-empty">No dedications yet.</p>';
+              panel.innerHTML = '<p class="admin-empty">No messages yet.</p>';
               return;
             }
 

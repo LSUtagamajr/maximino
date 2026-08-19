@@ -27,13 +27,35 @@ app.use(express.static(path.join(__dirname, 'src')));
 const MONGO_URI = process.env.MONGO_URI;
 
 if (!MONGO_URI) {
-  console.error('Missing MONGO_URI in .env — see .env.example');
+  console.error('MONGO_URI environment variable is missing.');
   process.exit(1);
 }
 
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('Connected to MongoDB successfully.'))
-  .catch(err => console.error('MongoDB connection error:', err.message));
+let mongoConnection = null;
+
+async function connectDB() {
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+
+  if (mongoConnection) {
+    return mongoConnection;
+  }
+
+  mongoConnection = mongoose.connect(MONGO_URI, {
+    serverSelectionTimeoutMS: 10000,
+  });
+
+  try {
+    await mongoConnection;
+    console.log('Connected to MongoDB successfully.');
+    return mongoose.connection;
+  } catch (err) {
+    mongoConnection = null;
+    console.error('MongoDB connection error:', err);
+    throw err;
+  }
+}
 
 const messageSchema = new mongoose.Schema({
   recipient: String,
@@ -188,11 +210,14 @@ app.post('/api/messages', postLimiter, async (req, res) => {
 
 app.get('/api/messages', async (req, res) => {
   try {
+    await connectDB();
+
     const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
     const query = {};
 
     if (req.query.before) {
       const beforeDate = new Date(req.query.before);
+
       if (!isNaN(beforeDate.getTime())) {
         query.timestamp = { $lt: beforeDate };
       }
@@ -208,17 +233,27 @@ app.get('/api/messages', async (req, res) => {
     res.json({ items, hasMore });
   } catch (err) {
     console.error('MongoDB fetch error:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      error: 'Failed to fetch messages.',
+      details: err.message
+    });
   }
 });
 
 app.get('/api/messages/count', async (req, res) => {
   try {
+    await connectDB();
+
     const count = await Message.countDocuments();
+
     res.json({ count });
   } catch (err) {
     console.error('MongoDB count error:', err);
-    res.status(500).json({ error: err.message });
+
+    res.status(500).json({
+      error: 'Failed to count messages.',
+      details: err.message
+    });
   }
 });
 
