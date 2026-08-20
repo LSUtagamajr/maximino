@@ -227,6 +227,20 @@ button { font-family: inherit; cursor: pointer; }
   .hero__stat-dot { animation: none; }
 }
 
+.hero__stat--bump {
+  animation: hero-stat-bump 0.4s ease;
+}
+
+@keyframes hero-stat-bump {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.06); border-color: var(--marker-gold); }
+  100% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__stat--bump { animation: none; }
+}
+
 .btn-outline {
   display: inline-block;
   background: transparent;

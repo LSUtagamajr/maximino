@@ -1000,6 +1000,14 @@ async function fetchWallPage(before) {
         document.getElementById('wallSection').scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
         showToast('Message pinned to the wall.');
+        if (heroStatEl) {
+          const prevCount = wallCount === null ? 0 : wallCount;
+          wallCount = prevCount + 1;
+          animateCountUp(heroStatEl, wallCount, prevCount);
+          heroStatEl.classList.remove('hero__stat--bump');
+          void heroStatEl.offsetWidth; // restart animation if it fires twice quickly
+          heroStatEl.classList.add('hero__stat--bump');
+        }
       }
     } catch (err) {
       console.error(err);
@@ -1014,19 +1022,21 @@ async function fetchWallPage(before) {
   }
 
   const heroStatEl = document.getElementById('heroStat');
+  let wallCount = null;
 
   if (heroStatEl) {
     fetch('/api/messages/count')
       .then(res => res.json())
       .then(data => {
         if (typeof data.count === 'number') {
-          animateCountUp(heroStatEl, data.count);
+          wallCount = data.count;
+          animateCountUp(heroStatEl, wallCount);
         }
       })
       .catch(err => console.error('Failed to load wall count:', err));
   }
 
-  function animateCountUp(el, target) {
+  function animateCountUp(el, target, from = 0) {
     el.hidden = false;
     const textEl = document.getElementById('heroStatText') || el;
     const dotEl = el.querySelector('.hero__stat-dot');
@@ -1037,13 +1047,15 @@ async function fetchWallPage(before) {
       return;
     }
 
-    const duration = 900;
+    if (dotEl) dotEl.hidden = false;
+
+    const duration = from === target ? 0 : 500;
     const start = performance.now();
 
     function frame(now) {
-      const progress = Math.min((now - start) / duration, 1);
+      const progress = duration === 0 ? 1 : Math.min((now - start) / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
-      const current = Math.round(eased * target);
+      const current = Math.round(from + eased * (target - from));
       textEl.textContent = `${current} note${current === 1 ? '' : 's'} pinned so far`;
       if (progress < 1) requestAnimationFrame(frame);
     }
@@ -1136,6 +1148,8 @@ async function fetchWallPage(before) {
     let noteEl = wallEl.querySelector(`[data-id="${CSS.escape(noteId)}"]`);
 
     if (!noteEl) {
+      // Not on the first page of the wall (e.g. an older note) — fetch it
+      // directly and pin it to the top so the shared link always resolves.
       try {
         const res = await fetch(`/api/messages/${encodeURIComponent(noteId)}`);
         if (!res.ok) return;
@@ -1159,6 +1173,11 @@ async function fetchWallPage(before) {
     const ticketBtn = noteEl.querySelector('.ticket');
     if (!ticketBtn || !ticketBtn.dataset.preview) return;
 
+    // Browsers only allow audio autoplay when it's tied to a user gesture,
+    // and that gesture doesn't reliably carry over from a link tap in
+    // another app into this page load. Try it — if it's blocked, leave the
+    // ticket visibly cued (glowing) so a single tap plays it instead of
+    // silently doing nothing.
     try {
       player.src = ticketBtn.dataset.preview;
       await player.play();
