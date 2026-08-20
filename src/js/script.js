@@ -66,9 +66,9 @@
       ${d.recipient ? `<p class="note__recipient">for ${escapeHtml(d.recipient)}</p>` : ''}
       <p class="note__message">${escapeHtml(d.message)}</p>
       <div class="note__interactions">
-        <button class="note__react" type="button">
+        <button class="note__react" type="button" aria-label="React with 🫶">
           <span aria-hidden="true">🫶</span>
-          <span class="note__react-count">${d.reactions || 0}</span>
+          <span class="note__react-count"${(d.reactions || 0) === 0 ? ' hidden' : ''}>${d.reactions || 0}</span>
         </button>
         <button class="note__share" type="button" aria-label="Share this note">
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -211,6 +211,7 @@
         const data = await res.json();
         if (countEl && typeof data.reactions === 'number') {
           countEl.textContent = data.reactions;
+          countEl.hidden = data.reactions === 0;
         }
         btn.classList.add('is-reacted');
         rememberReacted(messageId);
@@ -1135,8 +1136,6 @@ async function fetchWallPage(before) {
     let noteEl = wallEl.querySelector(`[data-id="${CSS.escape(noteId)}"]`);
 
     if (!noteEl) {
-      // Not on the first page of the wall (e.g. an older note) — fetch it
-      // directly and pin it to the top so the shared link always resolves.
       try {
         const res = await fetch(`/api/messages/${encodeURIComponent(noteId)}`);
         if (!res.ok) return;
@@ -1160,11 +1159,6 @@ async function fetchWallPage(before) {
     const ticketBtn = noteEl.querySelector('.ticket');
     if (!ticketBtn || !ticketBtn.dataset.preview) return;
 
-    // Browsers only allow audio autoplay when it's tied to a user gesture,
-    // and that gesture doesn't reliably carry over from a link tap in
-    // another app into this page load. Try it — if it's blocked, leave the
-    // ticket visibly cued (glowing) so a single tap plays it instead of
-    // silently doing nothing.
     try {
       player.src = ticketBtn.dataset.preview;
       await player.play();
