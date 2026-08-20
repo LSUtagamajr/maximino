@@ -565,11 +565,6 @@
     facebook: 'facebook-stories://share'
   };
 
-  const ANDROID_PACKAGES = {
-    instagram: 'com.instagram.android',
-    facebook: 'com.facebook.katana'
-  };
-
   const APP_LABELS = { instagram: 'Instagram', facebook: 'Facebook' };
 
   async function handleStoryShare(target, btn) {
@@ -585,7 +580,7 @@
       if (isIOS()) {
         await shareToStoriesIOS(target, blob);
       } else {
-        await shareToStoriesFallback(target, blob);
+        await shareToStoriesAndroid(target, blob);
       }
     } catch (err) {
       console.error(`${target} share failed:`, err);
@@ -626,16 +621,30 @@
     }
   }
 
-  async function shareToStoriesFallback(target, blob) {
+  async function shareToStoriesAndroid(target, blob) {
+    // Android has no public "share straight to Stories" URL scheme like iOS does,
+    // and there's no reliable way to hand a blob to another app via intent:// —
+    // that always forced a redundant download and, since the intent had no
+    // resolvable action, sent people to the Play Store even with the app installed.
+    // The native Web Share API is the right tool here: it hands the file straight
+    // to the OS share sheet, which lists Instagram/Facebook as targets directly
+    // (and surfaces "Add to Story" on versions that support it) — no download,
+    // no Play Store detour.
+    const file = new File([blob], 'maximino-note.png', { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Maximino' });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // user closed the share sheet — not an error
+        throw err;
+      }
+    }
+
+    // Very old/unsupported browsers: no way to hand off the file directly.
     downloadBlob(blob, 'maximino-note.png');
     showToast(`Image saved — open ${APP_LABELS[target]} and add it to your story from your gallery.`);
-
-    if (/Android/i.test(navigator.userAgent)) {
-      const pkg = ANDROID_PACKAGES[target];
-      setTimeout(() => {
-        window.location.href = `intent://#Intent;package=${pkg};end`;
-      }, 400);
-    }
   }
 
   async function shareNote(btn, d) {
