@@ -172,8 +172,6 @@
     });
   }
 
-  /* ---------- reactions (one-tap, remembered per-browser via localStorage) ---------- */
-
   const REACTED_KEY = 'maximino_reacted_ids';
 
   function getReactedIds() {
@@ -222,34 +220,477 @@
     });
   }
 
-  /* ---------- native share, with a clipboard fallback ---------- */
+  const STORY_W = 1080;
+  const STORY_H = 1920;
 
-  function attachShareHandler(btn, d) {
-    btn.addEventListener('click', async () => {
-      const shareText = d.song_title
-        ? `"${d.message}" — dedicated with "${d.song_title}" by ${d.song_artist || ''}`.trim()
-        : `"${d.message}"`;
-      const shareUrl = `${window.location.origin}/wall`;
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+    return v && v.trim() ? v.trim() : fallback;
+  }
 
-      if (navigator.share) {
-        try {
-          await navigator.share({ title: 'Maximino', text: shareText, url: shareUrl });
-        } catch (err) {
-          // AbortError just means the person closed the share sheet — not an error worth showing.
-          if (err.name !== 'AbortError') {
-            console.error('Share failed:', err);
-          }
-        }
-        return;
-      }
+  const STORY_PALETTES = [
+    { bg: '#17181a', tape: '#7c4b6b', ticket: '#2c5b58', accent: '#3b7a76', brand: '#e3a83b' }, // midnight teal (site default)
+    { bg: '#241722', tape: '#e3a83b', ticket: '#5c2f4a', accent: '#d4537e', brand: '#f4eedc' }, // plum + pink
+    { bg: '#151f19', tape: '#c78f2b', ticket: '#204a34', accent: '#6fae7c', brand: '#e3a83b' }, // forest + gold
+    { bg: '#231712', tape: '#3b7a76', ticket: '#5a3220', accent: '#d97a4a', brand: '#f4eedc' }, // rust + teal
+    { bg: '#121a22', tape: '#c78f2b', ticket: '#1f3b52', accent: '#5a9bd8', brand: '#e3a83b' }, // navy + gold
+    { bg: '#1f1416', tape: '#e3a83b', ticket: '#5c2320', accent: '#e2735f', brand: '#f4eedc' }  // maroon + coral
+  ];
 
-      try {
-        await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
-        showToast('Copied to clipboard.');
-      } catch (err) {
-        console.error('Clipboard copy failed:', err);
+  function hexToRgba(hex, alpha) {
+    const clean = hex.replace('#', '');
+    const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+    const num = parseInt(full, 16);
+    const r = (num >> 16) & 255;
+    const g = (num >> 8) & 255;
+    const b = num & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  }
+
+  function pickPalette(d) {
+    const seed = `${d._id || ''}|${d.song_title || ''}|${d.message || ''}`;
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+    }
+    return STORY_PALETTES[Math.abs(hash) % STORY_PALETTES.length];
+  }
+
+  function loadImage(src, { crossOrigin } = {}) {
+    return new Promise(resolve => {
+      if (!src) { resolve(null); return; }
+      const img = new Image();
+      if (crossOrigin) img.crossOrigin = crossOrigin;
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  function wrapCanvasText(ctx, text, maxWidth) {
+    const words = text.split(/\s+/);
+    const lines = [];
+    let line = '';
+    words.forEach(word => {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
       }
     });
+    if (line) lines.push(line);
+    return lines;
+  }
+
+  function fitMessageText(ctx, text, maxWidth, maxHeight) {
+    let size = 96;
+    const min = 46;
+    let lines = [text];
+    let lineHeight = size * 1.12;
+    while (size >= min) {
+      ctx.font = `700 ${size}px Caveat, cursive`;
+      lines = wrapCanvasText(ctx, text, maxWidth);
+      lineHeight = size * 1.12;
+      if (lines.length * lineHeight <= maxHeight) break;
+      size -= 4;
+    }
+    return { size, lines, lineHeight };
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  }
+
+  function truncateToWidth(ctx, text, maxWidth) {
+    if (!text) return '';
+    if (ctx.measureText(text).width <= maxWidth) return text;
+    let out = text;
+    while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) {
+      out = out.slice(0, -1);
+    }
+    return `${out}…`;
+  }
+
+  async function buildStoryCard(d) {
+    const canvas = document.createElement('canvas');
+    canvas.width = STORY_W;
+    canvas.height = STORY_H;
+    const ctx = canvas.getContext('2d');
+
+    const palette = pickPalette(d);
+    const colors = {
+      bg: palette.bg,
+      paper: cssVar('--paper-1', '#f4eedc'),
+      tape: palette.tape,
+      teal: palette.accent,
+      tealDark: palette.ticket,
+      gold: palette.brand
+    };
+
+    if (document.fonts) {
+      try {
+        await Promise.all([
+          document.fonts.load('700 96px Caveat'),
+          document.fonts.load('600 46px Caveat'),
+          document.fonts.load('600 38px "JetBrains Mono"'),
+          document.fonts.load('400 32px "JetBrains Mono"'),
+          document.fonts.load('400 28px "Work Sans"'),
+          document.fonts.ready
+        ]);
+      } catch (err) {
+      }
+    }
+
+    const pad = 84;
+
+    ctx.fillStyle = colors.bg;
+    ctx.fillRect(0, 0, STORY_W, STORY_H);
+
+    ctx.save();
+    ctx.translate(STORY_W / 2, 54);
+    ctx.rotate((-4 * Math.PI) / 180);
+    ctx.fillStyle = colors.tape;
+    ctx.fillRect(-70, -16, 140, 34);
+    ctx.restore();
+
+    const logoImg = await loadImage('/assets/logo.png');
+    let brandX = pad;
+    if (logoImg) {
+      const logoH = 56;
+      const logoW = logoH * (logoImg.width / logoImg.height);
+      ctx.drawImage(logoImg, pad, 128, logoW, logoH);
+      brandX = pad + logoW + 18;
+    }
+    ctx.fillStyle = colors.gold;
+    ctx.font = '600 46px Caveat, cursive';
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.fillText('Maximino', brandX, 172);
+
+    let cursorY = 260;
+
+    if (d.recipient) {
+      const label = `FOR ${d.recipient.toUpperCase()}`;
+      ctx.font = '500 30px "JetBrains Mono", monospace';
+      const pillW = ctx.measureText(label).width + 48;
+      const pillH = 56;
+      ctx.fillStyle = hexToRgba(colors.teal, 0.18);
+      roundRect(ctx, pad, cursorY, pillW, pillH, pillH / 2);
+      ctx.fill();
+      ctx.strokeStyle = colors.teal;
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, pad, cursorY, pillW, pillH, pillH / 2);
+      ctx.stroke();
+      ctx.fillStyle = colors.teal;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, pad + 24, cursorY + pillH / 2 + 2);
+      cursorY += pillH + 56;
+    } else {
+      cursorY += 20;
+    }
+
+    const hasSong = !!(d.song_title && d.song_title.trim());
+    const ticketH = 190;
+    const footerH = 90;
+    const bottomReserved = footerH + (hasSong ? ticketH + 40 : 0) + 40;
+    const messageMaxHeight = Math.max(200, STORY_H - cursorY - bottomReserved);
+    const messageMaxWidth = STORY_W - pad * 2;
+
+    const { size, lines, lineHeight } = fitMessageText(ctx, d.message, messageMaxWidth, messageMaxHeight);
+    ctx.font = `700 ${size}px Caveat, cursive`;
+    ctx.fillStyle = colors.paper;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+
+    const blockHeight = lines.length * lineHeight;
+    let textY = cursorY + Math.max(0, (messageMaxHeight - blockHeight) / 2) + size * 0.85;
+    lines.forEach(line => {
+      ctx.fillText(line, pad, textY);
+      textY += lineHeight;
+    });
+
+    if (hasSong) {
+      const ticketY = STORY_H - footerH - ticketH - 40;
+      const ticketX = pad;
+      const ticketW = STORY_W - pad * 2;
+
+      ctx.fillStyle = colors.tealDark;
+      roundRect(ctx, ticketX, ticketY, ticketW, ticketH, 20);
+      ctx.fill();
+
+      const artSize = ticketH - 40;
+      const artX = ticketX + 20;
+      const artY = ticketY + 20;
+
+      const artImg = await loadImage(d.album_art, { crossOrigin: 'anonymous' });
+      ctx.save();
+      roundRect(ctx, artX, artY, artSize, artSize, 10);
+      ctx.clip();
+      if (artImg) {
+        ctx.drawImage(artImg, artX, artY, artSize, artSize);
+      } else {
+        ctx.fillStyle = colors.teal;
+        ctx.fillRect(artX, artY, artSize, artSize);
+      }
+      ctx.restore();
+
+      const textX = artX + artSize + 28;
+      const eqReserve = 70;
+      const maxTextW = ticketX + ticketW - eqReserve - textX;
+
+      ctx.fillStyle = colors.paper;
+      ctx.font = '600 38px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(truncateToWidth(ctx, d.song_title, maxTextW), textX, ticketY + ticketH / 2 - 6);
+
+      ctx.fillStyle = 'rgba(244, 238, 220, 0.72)';
+      ctx.font = '400 32px "JetBrains Mono", monospace';
+      ctx.fillText(truncateToWidth(ctx, d.song_artist || '', maxTextW), textX, ticketY + ticketH / 2 + 36);
+
+      const eqX = ticketX + ticketW - 56;
+      const eqY = ticketY + ticketH / 2;
+      ctx.fillStyle = colors.paper;
+      [10, 22, 15].forEach((h, i) => {
+        ctx.fillRect(eqX + i * 13, eqY - h / 2, 7, h);
+      });
+    }
+
+    ctx.fillStyle = 'rgba(244, 238, 220, 0.5)';
+    ctx.font = '400 28px "Work Sans", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(`${window.location.host}/wall`, STORY_W / 2, STORY_H - 40);
+
+    return new Promise(resolve => {
+      canvas.toBlob(blob => resolve(blob), 'image/png', 0.95);
+    });
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+
+  const META_APP_ID = '000000000000';
+
+  const shareSheetOverlay = document.getElementById('shareSheetOverlay');
+  const shareToInstagramBtn = document.getElementById('shareToInstagram');
+  const shareToFacebookBtn = document.getElementById('shareToFacebook');
+  const shareToMoreBtn = document.getElementById('shareToMore');
+  const shareSheetCancelBtn = document.getElementById('shareSheetCancel');
+
+  let pendingShareNote = null;
+  let pendingShareBlob = null;
+
+  function isIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS reports as Mac
+  }
+
+  function attachShareHandler(btn, d) {
+    btn.addEventListener('click', () => openShareSheet(d));
+  }
+
+  function openShareSheet(d) {
+    if (!shareSheetOverlay) return;
+    pendingShareNote = d;
+    pendingShareBlob = null;
+    shareSheetOverlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeShareSheet() {
+    if (!shareSheetOverlay) return;
+    shareSheetOverlay.hidden = true;
+    document.body.style.overflow = '';
+    pendingShareNote = null;
+    pendingShareBlob = null;
+    [shareToInstagramBtn, shareToFacebookBtn, shareToMoreBtn].forEach(btn => {
+      if (!btn) return;
+      btn.disabled = false;
+      btn.classList.remove('is-loading');
+    });
+  }
+
+  async function getPendingBlob() {
+    if (pendingShareBlob) return pendingShareBlob;
+    pendingShareBlob = await buildStoryCard(pendingShareNote);
+    return pendingShareBlob;
+  }
+
+  if (shareSheetOverlay) {
+    shareSheetCancelBtn.addEventListener('click', closeShareSheet);
+    shareSheetOverlay.addEventListener('click', e => {
+      if (e.target === shareSheetOverlay) closeShareSheet();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && !shareSheetOverlay.hidden) closeShareSheet();
+    });
+
+    shareToInstagramBtn.addEventListener('click', () => handleStoryShare('instagram', shareToInstagramBtn));
+    shareToFacebookBtn.addEventListener('click', () => handleStoryShare('facebook', shareToFacebookBtn));
+
+    shareToMoreBtn.addEventListener('click', async () => {
+      const d = pendingShareNote;
+      const btn = shareToMoreBtn;
+      if (!d || btn.disabled) return;
+      btn.disabled = true;
+      btn.classList.add('is-loading');
+      closeShareSheet();
+      await shareNote(btn, d);
+    });
+  }
+
+  const STORY_SCHEMES = {
+    instagram: 'instagram-stories://share',
+    facebook: 'facebook-stories://share'
+  };
+
+  const ANDROID_PACKAGES = {
+    instagram: 'com.instagram.android',
+    facebook: 'com.facebook.katana'
+  };
+
+  const APP_LABELS = { instagram: 'Instagram', facebook: 'Facebook' };
+
+  async function handleStoryShare(target, btn) {
+    if (!pendingShareNote || btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add('is-loading');
+
+    let blob = null;
+    try {
+      blob = await getPendingBlob();
+      if (!blob) throw new Error('Could not render the image.');
+
+      if (isIOS()) {
+        await shareToStoriesIOS(target, blob);
+      } else {
+        await shareToStoriesFallback(target, blob);
+      }
+    } catch (err) {
+      console.error(`${target} share failed:`, err);
+      if (blob) downloadBlob(blob, 'maximino-note.png');
+      showToast(`Couldn't open ${APP_LABELS[target]} directly — image saved, add it from your gallery.`);
+    } finally {
+      closeShareSheet();
+    }
+  }
+
+  async function shareToStoriesIOS(target, blob) {
+    if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
+      throw new Error('Clipboard image write not supported on this browser.');
+    }
+
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+
+    const url = `${STORY_SCHEMES[target]}?source_application=${META_APP_ID}`;
+
+    const leftPage = new Promise(resolve => {
+      const onHide = () => {
+        document.removeEventListener('visibilitychange', onHide);
+        resolve(true);
+      };
+      document.addEventListener('visibilitychange', onHide);
+      setTimeout(() => {
+        document.removeEventListener('visibilitychange', onHide);
+        resolve(false);
+      }, 1600);
+    });
+
+    window.location.href = url;
+
+    const opened = await leftPage;
+    if (!opened) {
+      downloadBlob(blob, 'maximino-note.png');
+      showToast(`${APP_LABELS[target]} not found — image saved instead.`);
+    }
+  }
+
+  async function shareToStoriesFallback(target, blob) {
+    downloadBlob(blob, 'maximino-note.png');
+    showToast(`Image saved — open ${APP_LABELS[target]} and add it to your story from your gallery.`);
+
+    if (/Android/i.test(navigator.userAgent)) {
+      const pkg = ANDROID_PACKAGES[target];
+      setTimeout(() => {
+        window.location.href = `intent://#Intent;package=${pkg};end`;
+      }, 400);
+    }
+  }
+
+  async function shareNote(btn, d) {
+    if (btn.disabled) return;
+    btn.disabled = true;
+    btn.classList.add('is-sharing');
+
+    try {
+      const blob = await buildStoryCard(d);
+      if (!blob) throw new Error('Canvas produced no image data.');
+
+      const file = new File([blob], 'maximino-note.png', { type: 'image/png' });
+      const shareText = d.song_title
+        ? `"${d.message}" — paired with "${d.song_title}" by ${d.song_artist || ''}`.trim()
+        : `"${d.message}"`;
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Maximino', text: shareText });
+      } else {
+        downloadBlob(blob, 'maximino-note.png');
+        showToast('Image saved — add it to your story.');
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') {
+      } else {
+        console.error('Image share failed, falling back to a text share:', err);
+        await legacyShare(d);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove('is-sharing');
+    }
+  }
+
+  async function legacyShare(d) {
+    const shareText = d.song_title
+      ? `"${d.message}" — dedicated with "${d.song_title}" by ${d.song_artist || ''}`.trim()
+      : `"${d.message}"`;
+    const shareUrl = `${window.location.origin}/wall`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Maximino', text: shareText, url: shareUrl });
+      } catch (err) {
+        if (err.name !== 'AbortError') console.error('Share failed:', err);
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+      showToast('Copied to clipboard.');
+    } catch (err) {
+      console.error('Clipboard copy failed:', err);
+    }
   }
 
   function togglePreview(ticketBtn) {
@@ -542,8 +983,6 @@ async function fetchWallPage(before) {
     errorEl.textContent = msg;
     errorEl.hidden = false;
   }
-
-  /* ---------- homepage live counter (only exists on index.html) ---------- */
 
   const heroStatEl = document.getElementById('heroStat');
 

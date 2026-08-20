@@ -176,7 +176,7 @@ const postLimiter = rateLimit({
   max: 5, 
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Too many dedications pinned. Wait a minute before pinning another.' }
+  message: { error: 'Too many messages pinned. Wait a minute before pinning another.' }
 });
 
 app.post('/api/messages', postLimiter, async (req, res) => {
@@ -287,7 +287,6 @@ app.post('/api/messages/:id/report', reportLimiter, async (req, res) => {
   }
 });
 
-// --- ROUTE: REACT TO A MESSAGE (light, one-tap, no auth — dedup is handled client-side) ---
 const reactLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,

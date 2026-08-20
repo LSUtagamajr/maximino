@@ -479,6 +479,17 @@ button { font-family: inherit; cursor: pointer; }
   height: 14px;
 }
 
+.note__share.is-sharing {
+  opacity: 0.55;
+  cursor: wait;
+  animation: share-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes share-pulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.9; }
+}
+
 
 .ticket {
   display: flex;
@@ -630,6 +641,108 @@ button { font-family: inherit; cursor: pointer; }
   font-weight: 700;
   margin: 0 0 22px;
 }
+
+.share-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.7);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  z-index: 55;
+}
+
+.share-sheet-overlay[hidden] { display: none; }
+
+.share-sheet {
+  width: 100%;
+  max-width: 400px;
+  background: var(--paper-1);
+  color: var(--ink);
+  border-radius: 20px 20px 12px 12px;
+  padding: 18px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -20px 50px -12px rgba(0, 0, 0, 0.55);
+}
+
+.share-sheet__title {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 4px 4px 14px;
+}
+
+.share-sheet__option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(32, 41, 61, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.share-sheet__option:hover { background: rgba(255, 255, 255, 0.85); }
+
+.share-sheet__option:disabled { cursor: wait; opacity: 0.7; }
+
+.share-sheet__option--secondary {
+  background: transparent;
+  border-style: dashed;
+}
+
+.share-sheet__icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #d4537e, #e3a83b);
+}
+
+.share-sheet__icon svg { width: 16px; height: 16px; }
+
+.share-sheet__icon--facebook { background: #1877f2; }
+
+.share-sheet__option-label { display: inline-flex; flex-direction: column; line-height: 1.2; }
+
+.share-sheet__option-loading {
+  display: none;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--music-teal-dark);
+}
+
+.share-sheet__option.is-loading .share-sheet__option-loading { display: block; }
+
+.share-sheet__cancel {
+  width: 100%;
+  padding: 13px 14px;
+  margin-top: 4px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink);
+  opacity: 0.65;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.share-sheet__cancel:hover { opacity: 1; }
 
 .feedback__intro {
   font-size: 0.85rem;
