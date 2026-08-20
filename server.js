@@ -258,6 +258,30 @@ app.get('/api/messages/count', async (req, res) => {
   }
 });
 
+app.get('/api/messages/:id', async (req, res) => {
+  try {
+    await connectDB();
+
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid note id.' });
+    }
+
+    const item = await Message.findById(id);
+    if (!item) {
+      return res.status(404).json({ error: 'Note not found.' });
+    }
+
+    res.json({ item });
+  } catch (err) {
+    console.error('MongoDB fetch-by-id error:', err);
+    res.status(500).json({
+      error: 'Failed to fetch note.',
+      details: err.message
+    });
+  }
+});
+
 const reportLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,

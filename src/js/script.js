@@ -58,6 +58,7 @@
     const note = document.createElement('article');
     note.className = 'note';
     note.style.setProperty('--tape-angle', randomTapeAngle());
+    if (d._id) note.dataset.id = d._id;
 
     const hasSong = d.song_title && d.song_title.trim();
 
@@ -323,6 +324,11 @@
     return `${out}…`;
   }
 
+  function noteShareUrl(d) {
+    if (!d || !d._id) return `${window.location.origin}/wall`;
+    return `${window.location.origin}/wall?note=${encodeURIComponent(d._id)}&play=1`;
+  }
+
   async function buildStoryCard(d) {
     const canvas = document.createElement('canvas');
     canvas.width = STORY_W;
@@ -472,7 +478,8 @@
     ctx.font = '400 28px "Work Sans", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(`${window.location.host}/wall`, STORY_W / 2, STORY_H - 40);
+    const footerLabel = hasSong ? `${window.location.host}/wall — tap to listen` : `${window.location.host}/wall`;
+    ctx.fillText(footerLabel, STORY_W / 2, STORY_H - 40);
 
     return new Promise(resolve => {
       canvas.toBlob(blob => resolve(blob), 'image/png', 0.95);
@@ -507,10 +514,21 @@
   }
 
   function attachShareHandler(btn, d) {
-    btn.addEventListener('click', () => openShareSheet(d));
+    btn.addEventListener('click', () => openShareSheet(d, btn));
   }
 
-  function openShareSheet(d) {
+  function openShareSheet(d, btn) {
+    // Only iOS has a real "share straight to Stories" mechanism (the
+    // instagram-stories:// / facebook-stories:// URL schemes). On Android
+    // there's no way for a website to deep-link into a specific app, so the
+    // Instagram/Facebook buttons would just open the exact same native share
+    // sheet as "More options" — showing all three is misleading, not helpful.
+    // Skip the custom picker there and go straight to the native share sheet.
+    if (!isIOS()) {
+      shareNote(btn, d);
+      return;
+    }
+
     if (!shareSheetOverlay) return;
     pendingShareNote = d;
     pendingShareBlob = null;
@@ -660,9 +678,10 @@
       const shareText = d.song_title
         ? `"${d.message}" — paired with "${d.song_title}" by ${d.song_artist || ''}`.trim()
         : `"${d.message}"`;
+      const shareUrl = noteShareUrl(d);
 
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Maximino', text: shareText });
+        await navigator.share({ files: [file], title: 'Maximino', text: shareText, url: shareUrl });
       } else {
         downloadBlob(blob, 'maximino-note.png');
         showToast('Image saved — add it to your story.');
@@ -683,7 +702,7 @@
     const shareText = d.song_title
       ? `"${d.message}" — dedicated with "${d.song_title}" by ${d.song_artist || ''}`.trim()
       : `"${d.message}"`;
-    const shareUrl = `${window.location.origin}/wall`;
+    const shareUrl = noteShareUrl(d);
 
     if (navigator.share) {
       try {
@@ -1008,9 +1027,12 @@ async function fetchWallPage(before) {
 
   function animateCountUp(el, target) {
     el.hidden = false;
+    const textEl = document.getElementById('heroStatText') || el;
+    const dotEl = el.querySelector('.hero__stat-dot');
 
     if (target === 0) {
-      el.textContent = 'Be the first to pin something.';
+      if (dotEl) dotEl.hidden = true;
+      textEl.textContent = 'Be the first to pin something.';
       return;
     }
 
@@ -1021,7 +1043,7 @@ async function fetchWallPage(before) {
       const progress = Math.min((now - start) / duration, 1);
       const eased = 1 - Math.pow(1 - progress, 3);
       const current = Math.round(eased * target);
-      el.textContent = `${current} note${current === 1 ? '' : 's'} pinned so far`;
+      textEl.textContent = `${current} note${current === 1 ? '' : 's'} pinned so far`;
       if (progress < 1) requestAnimationFrame(frame);
     }
 
@@ -1101,5 +1123,58 @@ async function fetchWallPage(before) {
     });
   }
 
-  loadWall();
+  async function handleSharedNoteLink() {
+    if (!wallEl) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const noteId = params.get('note');
+    if (!noteId) return;
+
+    const shouldPlay = params.get('play') === '1';
+
+    let noteEl = wallEl.querySelector(`[data-id="${CSS.escape(noteId)}"]`);
+
+    if (!noteEl) {
+      // Not on the first page of the wall (e.g. an older note) — fetch it
+      // directly and pin it to the top so the shared link always resolves.
+      try {
+        const res = await fetch(`/api/messages/${encodeURIComponent(noteId)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.item) return;
+
+        noteEl = renderMessage(data.item);
+        wallEl.insertBefore(noteEl, wallEl.firstChild);
+        wallEmptyEl.hidden = true;
+      } catch (err) {
+        console.error('Failed to load shared note:', err);
+        return;
+      }
+    }
+
+    noteEl.classList.add('note--shared-highlight');
+    noteEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+    if (!shouldPlay) return;
+
+    const ticketBtn = noteEl.querySelector('.ticket');
+    if (!ticketBtn || !ticketBtn.dataset.preview) return;
+
+    // Browsers only allow audio autoplay when it's tied to a user gesture,
+    // and that gesture doesn't reliably carry over from a link tap in
+    // another app into this page load. Try it — if it's blocked, leave the
+    // ticket visibly cued (glowing) so a single tap plays it instead of
+    // silently doing nothing.
+    try {
+      player.src = ticketBtn.dataset.preview;
+      await player.play();
+      ticketBtn.classList.add('is-playing');
+      activeTicket = ticketBtn;
+    } catch (err) {
+      ticketBtn.classList.add('is-cued');
+      showToast('Tap the song to hear it.');
+    }
+  }
+
+  loadWall().then(handleSharedNoteLink);
 })();
