@@ -64,6 +64,7 @@ const messageSchema = new mongoose.Schema({
   song_artist: String,
   album_art: String,
   preview_url: String,
+  reactions: { type: Number, default: 0 },
 }, {
   timestamps: { createdAt: 'timestamp', updatedAt: 'updated_at' }
 });
@@ -282,6 +283,40 @@ app.post('/api/messages/:id/report', reportLimiter, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     console.error('MongoDB report save error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- ROUTE: REACT TO A MESSAGE (light, one-tap, no auth — dedup is handled client-side) ---
+const reactLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many reactions at once. Slow down a little.' }
+});
+
+app.post('/api/messages/:id/react', reactLimiter, async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: 'Invalid message id.' });
+  }
+
+  try {
+    const updated = await Message.findByIdAndUpdate(
+      id,
+      { $inc: { reactions: 1 } },
+      { returnDocument: 'after' }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Message not found.' });
+    }
+
+    res.json({ reactions: updated.reactions });
+  } catch (err) {
+    console.error('MongoDB reaction save error:', err);
     res.status(500).json({ error: err.message });
   }
 });

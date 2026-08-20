@@ -64,6 +64,20 @@
     note.innerHTML = `
       ${d.recipient ? `<p class="note__recipient">for ${escapeHtml(d.recipient)}</p>` : ''}
       <p class="note__message">${escapeHtml(d.message)}</p>
+      <div class="note__interactions">
+        <button class="note__react" type="button">
+          <span aria-hidden="true">🫶</span>
+          <span class="note__react-count">${d.reactions || 0}</span>
+        </button>
+        <button class="note__share" type="button" aria-label="Share this note">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="18" cy="5" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="6" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <circle cx="18" cy="19" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+            <path d="M8.6 10.6l6.8-4.2M8.6 13.4l6.8 4.2" stroke="currentColor" stroke-width="1.8"/>
+          </svg>
+        </button>
+      </div>
       <div class="note__footer">
         <div class="note__meta">
           <span class="note__time">${d.timestamp ? timeAgo(d.timestamp) : ''}</span>
@@ -90,6 +104,16 @@
     const reportBtn = note.querySelector('.note__report');
     if (reportBtn && d._id) {
       attachReportHandler(reportBtn, d._id);
+    }
+
+    const reactBtn = note.querySelector('.note__react');
+    if (reactBtn && d._id) {
+      attachReactionHandler(reactBtn, d._id);
+    }
+
+    const shareBtn = note.querySelector('.note__share');
+    if (shareBtn) {
+      attachShareHandler(shareBtn, d);
     }
 
     requestAnimationFrame(() => {
@@ -144,6 +168,86 @@
         btn.textContent = 'Report';
         btn.disabled = false;
         confirming = false;
+      }
+    });
+  }
+
+  /* ---------- reactions (one-tap, remembered per-browser via localStorage) ---------- */
+
+  const REACTED_KEY = 'maximino_reacted_ids';
+
+  function getReactedIds() {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(REACTED_KEY) || '[]'));
+    } catch (err) {
+      return new Set();
+    }
+  }
+
+  function rememberReacted(id) {
+    const ids = getReactedIds();
+    ids.add(id);
+    try {
+      localStorage.setItem(REACTED_KEY, JSON.stringify([...ids]));
+    } catch (err) {
+      // Storage full or blocked (private browsing) — reaction still went through server-side.
+    }
+  }
+
+  function attachReactionHandler(btn, messageId) {
+    const countEl = btn.querySelector('.note__react-count');
+
+    if (getReactedIds().has(messageId)) {
+      btn.classList.add('is-reacted');
+      btn.disabled = true;
+    }
+
+    btn.addEventListener('click', async () => {
+      if (btn.disabled) return;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`/api/messages/${messageId}/react`, { method: 'POST' });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (countEl && typeof data.reactions === 'number') {
+          countEl.textContent = data.reactions;
+        }
+        btn.classList.add('is-reacted');
+        rememberReacted(messageId);
+      } catch (err) {
+        console.error('Reaction failed:', err);
+        btn.disabled = false;
+      }
+    });
+  }
+
+  /* ---------- native share, with a clipboard fallback ---------- */
+
+  function attachShareHandler(btn, d) {
+    btn.addEventListener('click', async () => {
+      const shareText = d.song_title
+        ? `"${d.message}" — dedicated with "${d.song_title}" by ${d.song_artist || ''}`.trim()
+        : `"${d.message}"`;
+      const shareUrl = `${window.location.origin}/wall`;
+
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: 'Maximino', text: shareText, url: shareUrl });
+        } catch (err) {
+          // AbortError just means the person closed the share sheet — not an error worth showing.
+          if (err.name !== 'AbortError') {
+            console.error('Share failed:', err);
+          }
+        }
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(`${shareText} ${shareUrl}`);
+        showToast('Copied to clipboard.');
+      } catch (err) {
+        console.error('Clipboard copy failed:', err);
       }
     });
   }
@@ -437,6 +541,43 @@ async function fetchWallPage(before) {
   function showError(msg) {
     errorEl.textContent = msg;
     errorEl.hidden = false;
+  }
+
+  /* ---------- homepage live counter (only exists on index.html) ---------- */
+
+  const heroStatEl = document.getElementById('heroStat');
+
+  if (heroStatEl) {
+    fetch('/api/messages/count')
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.count === 'number') {
+          animateCountUp(heroStatEl, data.count);
+        }
+      })
+      .catch(err => console.error('Failed to load wall count:', err));
+  }
+
+  function animateCountUp(el, target) {
+    el.hidden = false;
+
+    if (target === 0) {
+      el.textContent = 'Be the first to pin something.';
+      return;
+    }
+
+    const duration = 900;
+    const start = performance.now();
+
+    function frame(now) {
+      const progress = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      const current = Math.round(eased * target);
+      el.textContent = `${current} note${current === 1 ? '' : 's'} pinned so far`;
+      if (progress < 1) requestAnimationFrame(frame);
+    }
+
+    requestAnimationFrame(frame);
   }
 
   const feedbackOverlay = document.getElementById('feedbackOverlay');
